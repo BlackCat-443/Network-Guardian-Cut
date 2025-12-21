@@ -1,0 +1,421 @@
+<!-- [file name]: templates/index.html -->
+<!-- [file content begin] -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Router Dashboard with NetCut</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1><i class="fas fa-network-wired"></i> Router Dashboard <span class="netcut-badge">+NetCut</span></h1>
+            <div class="last-update">Last update: <span id="last-update-time">--</span></div>
+        </header>
+
+        <nav>
+            <ul>
+                <li class="active"><a href="#dashboard"><i class="fas fa-chart-line"></i> Dashboard</a></li>
+                <li><a href="#devices"><i class="fas fa-laptop"></i> Devices</a></li>
+                <li><a href="#netcut"><i class="fas fa-bolt"></i> NetCut Control</a></li>
+                <li><a href="#settings"><i class="fas fa-cog"></i> Settings</a></li>
+            </ul>
+        </nav>
+
+        <main>
+            <section id="dashboard" class="active-section">
+                <div class="dashboard-header">
+                    <h2>Network Overview</h2>
+                    <button id="refresh-btn" class="refresh-btn"><i class="fas fa-sync-alt"></i> Refresh</button>
+                </div>
+
+                <div class="stats-container">
+                    <div class="stat-card">
+                        <div class="stat-icon"><i class="fas fa-wifi"></i></div>
+                        <div class="stat-content">
+                            <h3>Network Status</h3>
+                            <p class="stat-value" id="network-status">Online</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon"><i class="fas fa-laptop-house"></i></div>
+                        <div class="stat-content">
+                            <h3>Active Devices</h3>
+                            <p class="stat-value" id="active-devices">--</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon"><i class="fas fa-ban"></i></div>
+                        <div class="stat-content">
+                            <h3>Blocked/Cut</h3>
+                            <p class="stat-value" id="blocked-devices">--</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon"><i class="fas fa-tachometer-alt"></i></div>
+                        <div class="stat-content">
+                            <h3>Download</h3>
+                            <p class="stat-value" id="download-stats">--</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon"><i class="fas fa-upload"></i></div>
+                        <div class="stat-content">
+                            <h3>Upload</h3>
+                            <p class="stat-value" id="upload-stats">--</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="chart-container">
+                    <div class="chart-card">
+                        <h3>Network Traffic</h3>
+                        <canvas id="network-chart" crossorigin="anonymous"></canvas>
+                    </div>
+                </div>
+            
+                <div class="info-cards">
+                    <div class="info-card">
+                        <h3><i class="fas fa-network-wired"></i> Network Information</h3>
+                        <table>
+                            <tr>
+                                <td>Local IP:</td>
+                                <td id="local-ip">--</td>
+                            </tr>
+                            <tr>
+                                <td>Gateway IP:</td>
+                                <td id="gateway-ip">--</td>
+                            </tr>
+                            <tr>
+                                <td>Interface:</td>
+                                <td id="interface">--</td>
+                            </tr>
+                            <tr>
+                                <td>NetCut Status:</td>
+                                <td id="netcut-global-status">--</td>
+                            </tr>
+                        </table>
+                    </div>
+
+                    <div class="info-card">
+                        <h3><i class="fas fa-microchip"></i> System Info</h3>
+                        <table>
+                            <tr>
+                                <td>Hostname:</td>
+                                <td id="system-hostname">--</td>
+                            </tr>
+                            <tr>
+                                <td>Platform:</td>
+                                <td id="system-platform">--</td>
+                            </tr>
+                            <tr>
+                                <td>Uptime:</td>
+                                <td id="system-uptime">--</td>
+                            </tr>
+                            <tr>
+                                <td>Last Scan:</td>
+                                <td id="last-scan-time">--</td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <section id="devices">
+                <div class="dashboard-header">
+                    <h2><i class="fas fa-laptop"></i> Connected Devices</h2>
+                    <div class="header-actions">
+                        <div class="search-container">
+                            <input type="text" id="device-search" placeholder="Search devices...">
+                            <span class="search-icon"><i class="fas fa-search"></i></span>
+                        </div>
+                        <button id="refresh-devices-btn" class="refresh-btn"><i class="fas fa-sync-alt"></i> Refresh</button>
+                    </div>
+                </div>
+
+                <div class="devices-container">
+                    <div class="devices-stats">
+                        <div class="stat-badge" id="total-devices-badge">
+                            <span class="stat-label">Total</span>
+                            <span class="stat-value">0</span>
+                        </div>
+                        <div class="stat-badge online" id="online-devices-badge">
+                            <span class="stat-label">Online</span>
+                            <span class="stat-value">0</span>
+                        </div>
+                        <div class="stat-badge blocked" id="cut-devices-badge">
+                            <span class="stat-label">Cut</span>
+                            <span class="stat-value">0</span>
+                        </div>
+                        <div class="stat-badge offline" id="offline-devices-badge">
+                            <span class="stat-label">Offline</span>
+                            <span class="stat-value">0</span>
+                        </div>
+                    </div>
+                    
+                    <div class="device-list">
+                        <table id="devices-table">
+                            <thead>
+                                <tr>
+                                    <th>Status</th>
+                                    <th>Hostname</th>
+                                    <th>IP Address</th>
+                                    <th>MAC Address</th>
+                                    <th>Last Seen</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="devices-list">
+                                <!-- Devices will be populated here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <section id="netcut">
+                <div class="dashboard-header">
+                    <h2><i class="fas fa-bolt"></i> NetCut ARP Spoofing Control</h2>
+                    <div class="netcut-status-display">
+                        <span id="netcut-engine-status" class="netcut-status-inactive">
+                            <i class="fas fa-power-off"></i> NetCut Engine: INACTIVE
+                        </span>
+                    </div>
+                </div>
+
+                <div class="netcut-control-panel">
+                    <div class="netcut-card">
+                        <div class="card-header">
+                            <h3><i class="fas fa-cogs"></i> Engine Information</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="netcut-info-grid">
+                                <div class="info-item">
+                                    <span class="info-label">Gateway IP:</span>
+                                    <span class="info-value" id="netcut-gateway-ip">--</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">Gateway MAC:</span>
+                                    <span class="info-value" id="netcut-gateway-mac">--</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">Interface:</span>
+                                    <span class="info-value" id="netcut-interface">--</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">Local IP:</span>
+                                    <span class="info-value" id="netcut-local-ip">--</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="netcut-card">
+                        <div class="card-header">
+                            <h3><i class="fas fa-fire"></i> Active Cuts</h3>
+                            <span class="badge" id="active-cuts-count">0</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="active-cuts-list" id="active-cuts-container">
+                                <div class="no-cuts-message">
+                                    <i class="fas fa-wifi"></i>
+                                    <p>No active internet cuts</p>
+                                </div>
+                            </div>
+                            <div class="netcut-bulk-actions">
+                                <button id="netcut-restore-all" class="action-btn btn-netcut-restore">
+                                    <i class="fas fa-wifi"></i> Restore All Internet
+                                </button>
+                                <button id="netcut-refresh" class="action-btn">
+                                    <i class="fas fa-sync"></i> Refresh Status
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="netcut-card warning">
+                        <div class="card-header">
+                            <h3><i class="fas fa-exclamation-triangle"></i> Warning & Disclaimer</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="warning-content">
+                                <p><strong>NetCut uses ARP Spoofing to cut internet connections.</strong></p>
+                                <ul>
+                                    <li><i class="fas fa-check-circle"></i> Only use on your own network</li>
+                                    <li><i class="fas fa-check-circle"></i> Requires administrator/root privileges</li>
+                                    <li><i class="fas fa-check-circle"></i> May be detected by security software</li>
+                                    <li><i class="fas fa-check-circle"></i> Always restore connections after testing</li>
+                                </ul>
+                                <div class="arp-info">
+                                    <p><i class="fas fa-info-circle"></i> <strong>ARP Spoofing Method:</strong> Sends fake ARP packets to poison target's ARP cache, redirecting traffic to this machine without forwarding.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="netcut-quick-controls">
+                    <h3><i class="fas fa-play-circle"></i> Quick Actions</h3>
+                    <div class="quick-controls-grid">
+                        <button id="netcut-test" class="quick-btn test-btn">
+                            <i class="fas fa-vial"></i> Test NetCut Engine
+                        </button>
+                        <button id="netcut-cleanup" class="quick-btn cleanup-btn">
+                            <i class="fas fa-broom"></i> Cleanup All Cuts
+                        </button>
+                        <button id="netcut-view-logs" class="quick-btn logs-btn">
+                            <i class="fas fa-clipboard-list"></i> View ARP Logs
+                        </button>
+                        <button id="netcut-help" class="quick-btn help-btn">
+                            <i class="fas fa-question-circle"></i> NetCut Help
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <section id="settings">
+                <div class="dashboard-header">
+                    <h2><i class="fas fa-cog"></i> Settings</h2>
+                </div>
+
+                <div class="settings-container">
+                    <div class="settings-card">
+                        <h3><i class="fas fa-clock"></i> Scan Settings</h3>
+                        <div class="setting-item">
+                            <label for="scan-interval">Scan Interval (seconds):</label>
+                            <input type="number" id="scan-interval" min="30" value="60">
+                            <p class="setting-description">How often to scan the network for devices</p>
+                        </div>
+                        <button id="save-settings" class="save-btn">
+                            <i class="fas fa-save"></i> Save Settings
+                        </button>
+                    </div>
+
+                    <div class="settings-card">
+<<<<<<< HEAD
+                        <h3>About</h3>
+                        <p>Router Dashboard v1.0</p>
+                        <p>A professional network monitoring tool</p>
+=======
+                        <h3><i class="fas fa-edit"></i> Rename Devices (Mass)</h3>
+                        <div class="setting-item">
+                            <label for="rename-mass-upload">Upload JSON File:</label>
+                            <input type="file" id="rename-mass-upload" accept=".json">
+                            <p class="setting-description">Upload JSON with {"ip": "x.x.x.x", "hostname": "new_name"}</p>
+                        </div>
+                        <button id="rename-mass-btn" class="save-btn">
+                            <i class="fas fa-upload"></i> Upload and Rename
+                        </button>
+                    </div>
+
+                    <div class="settings-card">
+                        <h3><i class="fas fa-info-circle"></i> About</h3>
+                        <div class="about-content">
+                            <div class="app-version">
+                                <strong>Router Dashboard v2.0</strong>
+                                <span class="version-badge">+NetCut ARP</span>
+                            </div>
+                            <p>Advanced network monitoring tool with ARP spoofing capabilities</p>
+                            <div class="tech-stack">
+                                <span class="tech-badge">Python Flask</span>
+                                <span class="tech-badge">Scapy</span>
+                                <span class="tech-badge">ARP Spoofing</span>
+                                <span class="tech-badge">Real-time</span>
+                            </div>
+                            <div class="warning-note">
+                                <i class="fas fa-exclamation-triangle"></i>
+                                <span>Use responsibly on authorized networks only</span>
+                            </div>
+                        </div>
+>>>>>>> e1b2da4 (upgrade with cut inprogram)
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>&copy; 2025 Router Dashboard with NetCut | ARP Spoofing Engine Active</p>
+            <div class="footer-links">
+                <span id="current-time">--:--:--</span>
+                <span id="connection-status"><i class="fas fa-circle"></i> Connected</span>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div id="confirm-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal">&times;</span>
+            <h3 id="modal-title">Confirm Action</h3>
+            <p id="modal-message">Are you sure you want to perform this action?</p>
+            <div class="modal-buttons">
+                <button id="modal-cancel" class="cancel-btn">Cancel</button>
+                <button id="modal-confirm" class="confirm-btn">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+<<<<<<< HEAD
+=======
+    <!-- Rename Modal -->
+    <div id="rename-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal">&times;</span>
+            <h3 id="rename-modal-title">Rename Hostname</h3>
+            <p id="rename-modal-message">Enter a new hostname for the device:</p>
+            <input type="text" id="new-hostname" placeholder="New Hostname">
+            <div class="modal-buttons">
+                <button id="rename-cancel" class="cancel-btn">Cancel</button>
+                <button id="rename-confirm" class="confirm-btn">Rename</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- NetCut Info Modal -->
+    <div id="netcut-info-modal" class="modal">
+        <div class="modal-content netcut-modal">
+            <span class="close-modal">&times;</span>
+            <h3><i class="fas fa-bolt"></i> NetCut ARP Spoofing</h3>
+            <div class="netcut-modal-content">
+                <div class="modal-section">
+                    <h4>How It Works:</h4>
+                    <p>NetCut uses ARP (Address Resolution Protocol) spoofing to intercept network traffic:</p>
+                    <ol>
+                        <li>Sends fake ARP replies to target device</li>
+                        <li>Claims to be the network gateway</li>
+                        <li>Target sends all internet traffic to this machine</li>
+                        <li>Traffic is NOT forwarded = Internet cut</li>
+                    </ol>
+                </div>
+                <div class="modal-section">
+                    <h4>Requirements:</h4>
+                    <ul>
+                        <li>Run as Administrator/Root</li>
+                        <li>Network interface with promiscuous mode</li>
+                        <li>Scapy library installed</li>
+                        <li>Access to target network</li>
+                    </ul>
+                </div>
+                <div class="modal-section warning">
+                    <h4><i class="fas fa-exclamation-triangle"></i> Legal Warning:</h4>
+                    <p>ARP spoofing is a network attack. Only use on networks you own or have explicit permission to test.</p>
+                </div>
+            </div>
+            <div class="modal-buttons">
+                <button id="netcut-info-close" class="confirm-btn">I Understand</button>
+            </div>
+        </div>
+    </div>
+
+>>>>>>> e1b2da4 (upgrade with cut inprogram)
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+</html>
+<<<<<<< HEAD
+=======
+<!-- [file content end] -->
+>>>>>>> e1b2da4 (upgrade with cut inprogram)
