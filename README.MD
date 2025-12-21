@@ -1,6 +1,6 @@
 # 🌐 Network Guardian
 
-![Network Guardian](https://raw.githubusercontent.com/BlackCat-443/Network-Guardian/main/images/images.png)
+![Network Guardian](https://raw.githubusercontent.com/BlackCat-443/Network-Guardian-Cut/main/images/images.png)
 
 ## 📱 A powerful network monitoring and control application
 
@@ -33,7 +33,7 @@ Network Guardian is a web-based dashboard that gives you complete visibility and
 1. Clone the repository:
    ```
    git clone https://github.com/BlackCat-443/Network-Guardian.git
-   cd network-guardian
+   cd Network-Guardian-Cut
    ```
 2. (Optional) If you encounter issues, use a virtual environment:
    ```
@@ -59,7 +59,7 @@ Network Guardian is a web-based dashboard that gives you complete visibility and
 
 ### 💻 Devices Page
 
-![Network Devices](https://github.com/BlackCat-443/Network-Guardian/blob/main/images/devices.png?raw=true)
+![Network Devices](https://github.com/BlackCat-443/Network-Guardian-Cut/blob/main/images/devices.png?raw=true)
 
 - Displays all detected devices on the network
 - Shows IP addresses, MAC addresses, and connection status
@@ -67,7 +67,7 @@ Network Guardian is a web-based dashboard that gives you complete visibility and
 
 ### 🌐 Network Settings Page
 
-![Settings Page](https://raw.githubusercontent.com/BlackCat-443/Network-Guardian/main/images/settings.png)
+![Settings Page](https://raw.githubusercontent.com/BlackCat-443/Network-Guardian-Cut/main/images/settings.png)
 
 - Customize scan intervals
 - Adjust network monitoring preferences
@@ -75,14 +75,14 @@ Network Guardian is a web-based dashboard that gives you complete visibility and
 
 ### 📊 Real-time Traffic Chart
 
-![Live Traffic](https://raw.githubusercontent.com/BlackCat-443/Network-Guardian/main/images/live_traffic.png)
+![Live Traffic](https://raw.githubusercontent.com/BlackCat-443/Network-Guardian-Cut/main/images/live_traffic.png)
 
 - Displays real-time upload and download activity
 - Helps in identifying bandwidth usage spikes
 
 ### 📊 System Information Page
 
-![System Info](https://raw.githubusercontent.com/BlackCat-443/Network-Guardian/main/images/system_info.png)
+![System Info](https://raw.githubusercontent.com/BlackCat-443/Network-Guardian-Cut/main/images/system_info.png)
 
 - Displays system resource usage
 - Shows active network interfaces
@@ -90,7 +90,7 @@ Network Guardian is a web-based dashboard that gives you complete visibility and
 
 ### 📊 Connected Clients Page
 
-![Connected Clients](https://github.com/BlackCat-443/Network-Guardian/blob/main/images/connected_clients.png?raw=true)
+![Connected Clients](https://github.com/BlackCat-443/Network-Guardian-Cut/blob/main/images/connected_clients.png?raw=true)
 
 - Lists all currently connected devices
 - Displays hostname, IP, and MAC addresses
@@ -98,7 +98,7 @@ Network Guardian is a web-based dashboard that gives you complete visibility and
 
 ###  Netcut Conrol
 
-![Connected Clients](https://github.com/BlackCat-443/Network-Guardian/blob/main/images/CutInform.png?raw=true)
+![Connected Clients](https://github.com/BlackCat-443/Network-Guardian-Cut/blob/main/images/CutInform.png?raw=true)
 
 ## 🔧 NetCut Control Features (Under Development)
 
