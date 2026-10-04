@@ -5,23 +5,45 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Router Dashboard with NetCut</title>
+    <title>Network Guardian</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
 </head>
 <body>
+    
     <div class="container">
         <header>
-            <h1><i class="fas fa-network-wired"></i> Router Dashboard <span class="netcut-badge">+NetCut</span></h1>
-            <div class="last-update">Last update: <span id="last-update-time">--</span></div>
+            <div class="brand-block">
+                <h1><i class="fas fa-network-wired"></i> Network Guardian <span class="netcut-badge">Local Network</span></h1>
+                <span class="header-network-label">Network monitoring dashboard</span>
+            </div>
+            <div class="header-tools">
+                <div class="notification-wrap">
+                    <button id="notification-btn" class="notification-btn" type="button" aria-label="Notifications" aria-expanded="false">
+                        <i class="fas fa-bell"></i>
+                        <span id="notification-count" class="notification-count">0</span>
+                    </button>
+                    <div id="notification-panel" class="notification-panel" hidden>
+                        <div class="notification-panel-header">
+                            <div><strong>Notifications</strong><span id="notification-summary">No new alerts</span></div>
+                            <button id="notification-clear" type="button">Clear</button>
+                        </div>
+                        <div id="notification-list" class="notification-list">
+                            <div class="notification-empty"><i class="fas fa-check-circle"></i><span>You're all caught up.</span></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="last-update"><i class="fas fa-clock"></i> Updated <span id="last-update-time">--</span></div>
+            </div>
         </header>
 
         <nav>
             <ul>
                 <li class="active"><a href="#dashboard"><i class="fas fa-chart-line"></i> Dashboard</a></li>
                 <li><a href="#devices"><i class="fas fa-laptop"></i> Devices</a></li>
-                <li><a href="#netcut"><i class="fas fa-bolt"></i> NetCut Control</a></li>
+                <li><a href="#network-map"><i class="fas fa-diagram-project"></i> Network Map</a></li>
+                <li><a href="#netcut"><i class="fas fa-shield-halved"></i> Network Control</a></li>
                 <li><a href="#settings"><i class="fas fa-cog"></i> Settings</a></li>
             </ul>
         </nav>
@@ -29,8 +51,8 @@
         <main>
             <section id="dashboard" class="active-section">
                 <div class="dashboard-header">
-                    <h2>Network Overview</h2>
-                    <button id="refresh-btn" class="refresh-btn"><i class="fas fa-sync-alt"></i> Refresh</button>
+                    <div><h2>Network Overview</h2><p class="page-subtitle">A quick look at your connection, traffic, and connected devices.</p></div>
+                    <button id="refresh-btn" class="refresh-btn"><i class="fas fa-sync-alt"></i> Scan & Refresh</button>
                 </div>
 
                 <div class="stats-container">
@@ -95,7 +117,7 @@
                                 <td id="interface">--</td>
                             </tr>
                             <tr>
-                                <td>NetCut Status:</td>
+                                <td>Control Status:</td>
                                 <td id="netcut-global-status">--</td>
                             </tr>
                         </table>
@@ -127,13 +149,13 @@
 
             <section id="devices">
                 <div class="dashboard-header">
-                    <h2><i class="fas fa-laptop"></i> Connected Devices</h2>
+                    <div><h2><i class="fas fa-laptop"></i> Connected Devices</h2><p class="page-subtitle">See who is on the network and manage each device from one place.</p></div>
                     <div class="header-actions">
                         <div class="search-container">
-                            <input type="text" id="device-search" placeholder="Search devices...">
+                            <input type="text" id="device-search" placeholder="Search hostname, IP or MAC...">
                             <span class="search-icon"><i class="fas fa-search"></i></span>
                         </div>
-                        <button id="refresh-devices-btn" class="refresh-btn"><i class="fas fa-sync-alt"></i> Refresh</button>
+                        <button id="refresh-devices-btn" class="refresh-btn"><i class="fas fa-sync-alt"></i> Refresh list</button>
                     </div>
                 </div>
 
@@ -153,6 +175,14 @@
                         </div>
                         <div class="stat-badge offline" id="offline-devices-badge">
                             <span class="stat-label">Offline</span>
+                            <span class="stat-value">0</span>
+                        </div>
+                        <div class="stat-badge trusted" id="trusted-devices-badge">
+                            <span class="stat-label">Trusted</span>
+                            <span class="stat-value">0</span>
+                        </div>
+                        <div class="stat-badge new" id="new-devices-badge">
+                            <span class="stat-label">New</span>
                             <span class="stat-value">0</span>
                         </div>
                     </div>
@@ -177,9 +207,40 @@
                 </div>
             </section>
 
+            <section id="network-map">
+                <div class="dashboard-header">
+                    <div>
+                        <h2><i class="fas fa-diagram-project"></i> Network Map</h2>
+                        <p class="page-subtitle">A visual view of the gateway, this machine, and devices discovered on the local network.</p>
+                    </div>
+                    <div class="map-toolbar">
+                        <button id="map-refresh-btn" class="refresh-btn"><i class="fas fa-arrows-rotate"></i> Refresh map</button>
+                    </div>
+                </div>
+
+                <div class="map-summary">
+                    <div class="map-summary-card"><span>Gateway</span><strong id="map-gateway-label">--</strong></div>
+                    <div class="map-summary-card"><span>This device</span><strong id="map-local-label">--</strong></div>
+                    <div class="map-summary-card"><span>Clients</span><strong id="map-client-count">0</strong></div>
+                    <div class="map-summary-card"><span>Unknown</span><strong id="map-unknown-count">0</strong></div>
+                </div>
+
+                <div class="network-map-card">
+                    <div class="network-map-legend">
+                        <span><i class="map-dot gateway"></i> Gateway</span>
+                        <span><i class="map-dot local"></i> This device</span>
+                        <span><i class="map-dot trusted"></i> Trusted</span>
+                        <span><i class="map-dot unknown"></i> Unknown</span>
+                    </div>
+                    <div id="network-map-canvas" class="network-map-canvas">
+                        <div class="map-empty"><i class="fas fa-circle-notch fa-spin"></i><span>Building network map…</span></div>
+                    </div>
+                </div>
+            </section>
+
             <section id="netcut">
                 <div class="dashboard-header">
-                    <h2><i class="fas fa-bolt"></i> NetCut ARP Spoofing Control</h2>
+                    <div><h2><i class="fas fa-shield-halved"></i> Network Control</h2><p class="page-subtitle">Advanced controls for authorized network testing.</p></div>
                     <div class="netcut-status-display">
                         <span id="netcut-engine-status" class="netcut-status-inactive">
                             <i class="fas fa-power-off"></i> NetCut Engine: INACTIVE
@@ -228,10 +289,10 @@
                             </div>
                             <div class="netcut-bulk-actions">
                                 <button id="netcut-restore-all" class="action-btn btn-netcut-restore">
-                                    <i class="fas fa-wifi"></i> Restore All Internet
+                                    <i class="fas fa-wifi"></i> Restore all connections
                                 </button>
                                 <button id="netcut-refresh" class="action-btn">
-                                    <i class="fas fa-sync"></i> Refresh Status
+                                    <i class="fas fa-sync"></i> Refresh status
                                 </button>
                             </div>
                         </div>
@@ -262,16 +323,16 @@
                     <h3><i class="fas fa-play-circle"></i> Quick Actions</h3>
                     <div class="quick-controls-grid">
                         <button id="netcut-test" class="quick-btn test-btn">
-                            <i class="fas fa-vial"></i> Test NetCut Engine
+                            <i class="fas fa-vial"></i> Check control engine
                         </button>
                         <button id="netcut-cleanup" class="quick-btn cleanup-btn">
-                            <i class="fas fa-broom"></i> Cleanup All Cuts
+                            <i class="fas fa-broom"></i> Restore all cuts
                         </button>
                         <button id="netcut-view-logs" class="quick-btn logs-btn">
-                            <i class="fas fa-clipboard-list"></i> View ARP Logs
+                            <i class="fas fa-clipboard-list"></i> View activity logs
                         </button>
                         <button id="netcut-help" class="quick-btn help-btn">
-                            <i class="fas fa-question-circle"></i> NetCut Help
+                            <i class="fas fa-question-circle"></i> How it works
                         </button>
                     </div>
                 </div>
@@ -279,16 +340,16 @@
 
             <section id="settings">
                 <div class="dashboard-header">
-                    <h2><i class="fas fa-cog"></i> Settings</h2>
+                    <div><h2><i class="fas fa-cog"></i> Settings</h2><p class="page-subtitle">Configure scanning and device naming preferences.</p></div>
                 </div>
 
                 <div class="settings-container">
                     <div class="settings-card">
                         <h3><i class="fas fa-clock"></i> Scan Settings</h3>
                         <div class="setting-item">
-                            <label for="scan-interval">Scan Interval (seconds):</label>
+                            <label for="scan-interval">Automatic scan interval (seconds):</label>
                             <input type="number" id="scan-interval" min="30" value="60">
-                            <p class="setting-description">How often to scan the network for devices</p>
+                            <p class="setting-description">How often Network Guardian automatically scans for devices.</p>
                         </div>
                         <button id="save-settings" class="save-btn">
                             <i class="fas fa-save"></i> Save Settings
@@ -296,11 +357,6 @@
                     </div>
 
                     <div class="settings-card">
-<<<<<<< HEAD
-                        <h3>About</h3>
-                        <p>Router Dashboard v1.0</p>
-                        <p>A professional network monitoring tool</p>
-=======
                         <h3><i class="fas fa-edit"></i> Rename Devices (Mass)</h3>
                         <div class="setting-item">
                             <label for="rename-mass-upload">Upload JSON File:</label>
@@ -316,10 +372,10 @@
                         <h3><i class="fas fa-info-circle"></i> About</h3>
                         <div class="about-content">
                             <div class="app-version">
-                                <strong>Router Dashboard v2.0</strong>
-                                <span class="version-badge">+NetCut ARP</span>
+                                <strong>Network Guardian v2.1</strong>
+                                <span class="version-badge">Network Control</span>
                             </div>
-                            <p>Advanced network monitoring tool with ARP spoofing capabilities</p>
+                            <p>Network monitoring dashboard for authorized local-network testing and device management.</p>
                             <div class="tech-stack">
                                 <span class="tech-badge">Python Flask</span>
                                 <span class="tech-badge">Scapy</span>
@@ -331,19 +387,91 @@
                                 <span>Use responsibly on authorized networks only</span>
                             </div>
                         </div>
->>>>>>> e1b2da4 (upgrade with cut inprogram)
                     </div>
                 </div>
             </section>
         </main>
 
         <footer>
-            <p>&copy; 2025 Router Dashboard with NetCut | ARP Spoofing Engine Active</p>
+            <p>&copy; 2025 Network Guardian | Local network monitoring tool</p>
             <div class="footer-links">
                 <span id="current-time">--:--:--</span>
                 <span id="connection-status"><i class="fas fa-circle"></i> Connected</span>
             </div>
         </footer>
+    </div>
+
+    <!-- Device Detail Drawer -->
+    <div id="device-detail-modal" class="device-detail-modal" aria-hidden="true">
+        <div class="device-detail-backdrop" data-close-device-detail></div>
+        <aside class="device-detail-panel" role="dialog" aria-modal="true" aria-labelledby="device-detail-title">
+            <button class="device-detail-close" type="button" data-close-device-detail aria-label="Close device details">
+                <i class="fas fa-xmark"></i>
+            </button>
+            <div class="device-detail-header">
+                <div class="device-detail-icon"><i class="fas fa-laptop"></i></div>
+                <div>
+                    <span class="device-detail-eyebrow">DEVICE DETAILS</span>
+                    <h3 id="device-detail-title">Device</h3>
+                    <p id="device-detail-subtitle">--</p>
+                </div>
+            </div>
+
+            <div id="device-detail-loading" class="device-detail-loading">
+                <i class="fas fa-circle-notch fa-spin"></i>
+                <span>Loading device information…</span>
+            </div>
+
+            <div id="device-detail-content" class="device-detail-content" hidden>
+                <div class="device-detail-status-row">
+                    <span id="detail-status-pill" class="detail-status-pill">--</span>
+                    <span id="detail-last-seen">Last seen: --</span>
+                </div>
+
+                <section class="detail-section">
+                    <div class="detail-section-title"><i class="fas fa-id-card"></i><span>Identity</span></div>
+                    <div class="detail-grid">
+                        <div><span>Hostname</span><strong id="detail-hostname">--</strong></div>
+                        <div><span>IP Address</span><strong id="detail-ip">--</strong></div>
+                        <div><span>MAC Address</span><strong id="detail-mac">--</strong></div>
+                        <div><span>Vendor</span><strong id="detail-vendor">--</strong></div>
+                        <div><span>Device Type</span><strong id="detail-type">--</strong></div>
+                        <div><span>Role</span><strong id="detail-role">--</strong></div>
+                    </div>
+                </section>
+
+                <section class="detail-section">
+                    <div class="detail-section-title"><i class="fas fa-wifi"></i><span>Wi‑Fi / Link</span></div>
+                    <div class="link-highlight">
+                        <div><span>Technology</span><strong id="detail-wifi-tech">--</strong></div>
+                        <div><span>Network</span><strong id="detail-wifi-ssid">--</strong></div>
+                    </div>
+                    <div class="detail-grid compact">
+                        <div><span>RX Link</span><strong id="detail-rx-rate">--</strong></div>
+                        <div><span>TX Link</span><strong id="detail-tx-rate">--</strong></div>
+                        <div><span>Frequency</span><strong id="detail-frequency">--</strong></div>
+                        <div><span>Signal</span><strong id="detail-signal">--</strong></div>
+                    </div>
+                    <p id="detail-wifi-note" class="detail-note">--</p>
+                </section>
+
+                <section class="detail-section">
+                    <div class="detail-section-title"><i class="fas fa-gauge-high"></i><span>Current Traffic</span></div>
+                    <div class="traffic-highlight">
+                        <div class="traffic-value"><strong id="detail-traffic-rx">--</strong><span>Observed traffic</span></div>
+                        <div class="traffic-meter"><span id="detail-traffic-bar"></span></div>
+                    </div>
+                    <p id="detail-traffic-note" class="detail-note">--</p>
+                </section>
+
+                <section class="detail-section">
+                    <div class="detail-section-title"><i class="fas fa-clock-rotate-left"></i><span>Device History</span></div>
+                    <div id="detail-history" class="detail-history">
+                        <div class="history-empty">No history recorded yet.</div>
+                    </div>
+                </section>
+            </div>
+        </aside>
     </div>
 
     <!-- Confirmation Modal -->
@@ -359,8 +487,6 @@
         </div>
     </div>
 
-<<<<<<< HEAD
-=======
     <!-- Rename Modal -->
     <div id="rename-modal" class="modal">
         <div class="modal-content">
@@ -411,11 +537,7 @@
         </div>
     </div>
 
->>>>>>> e1b2da4 (upgrade with cut inprogram)
     <script src="{{ url_for('static', filename='js/script.js') }}"></script>
 </body>
 </html>
-<<<<<<< HEAD
-=======
 <!-- [file content end] -->
->>>>>>> e1b2da4 (upgrade with cut inprogram)
