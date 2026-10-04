@@ -14,6 +14,9 @@ import platform
 from scapy.all import ARP, send, get_if_hwaddr, Ether, srp
 import atexit
 import sys
+import re
+import ipaddress
+
 
 app = Flask(__name__)
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
@@ -30,7 +33,12 @@ traffic_history = {
     'upload': []
 }
 
-# ==================== NETCUT ARP SPOOFING ENGINE (DIPERBAIKI) ====================
+# Lightweight per-device traffic sampling cache.
+# This is best-effort because client traffic is only observable when the host
+# can see the relevant flows (for example, gateway/AP/forwarding scenarios).
+device_traffic_cache = {}
+
+# ==================== NETCUT ARP SPOOFING ENGINE ====================
 class NetCutEngine:
     def __init__(self):
         print("\n" + "="*60)
@@ -499,6 +507,344 @@ netcut = NetCutEngine()
 def cleanup_netcut():
     netcut.cleanup()
 
+# ==================== IMPROVED HOSTNAME DETECTION ====================
+
+def is_randomized_mac(mac):
+    """
+    Deteksi apakah MAC address adalah randomized (private MAC)
+    Fitur privasi di Android & iOS
+    """
+    if not mac or len(mac) < 2 or mac == 'Unknown' or mac == '--':
+        return False
+    
+    # Bersihkan MAC
+    mac = mac.upper().replace('-', ':')
+    
+    # Cek byte pertama (local administered MAC)
+    # Local administered MAC biasanya memiliki bit U/L = 1 (bit kedua dari LSB)
+    # Dalam hex, ini berarti byte pertama adalah 2, 6, A, E, 12, 16, 1A, 1E, dst
+    
+    try:
+        first_byte = mac[:2]
+        first_byte_int = int(first_byte, 16)
+        
+        # Cek bit U/L (bit ke-2 dari LSB)
+        # Jika bit ini 1, maka MAC adalah locally administered (bisa randomized)
+        is_local = (first_byte_int & 0x02) != 0
+        
+        # Android 10+ menggunakan MAC randomized dengan pola tertentu
+        # Biasanya byte pertama: 02, 06, 0A, 0E, 12, 16, 1A, 1E
+        android_patterns = ['02', '06', '0A', '0E', '12', '16', '1A', '1E']
+        
+        # iOS menggunakan pola serupa
+        ios_patterns = ['02', '06', '0A', '0E']
+        
+        if first_byte in android_patterns:
+            return True
+        
+        # Cek pola umum MAC randomized (biasanya byte kedua juga acak)
+        if len(mac) >= 5:
+            second_byte = mac[3:5]
+            if is_local and second_byte not in ['00', 'FF', 'AA', 'BB']:
+                return True
+    except:
+        pass
+    
+    return False
+
+def get_vendor_from_mac(mac):
+    """Deteksi vendor dari MAC address"""
+    if not mac or mac == 'Unknown' or mac == '--':
+        return 'Unknown'
+    
+    mac = mac.upper().replace('-', ':')
+    prefix = mac[:8]
+    
+    # Database vendor lengkap
+    vendors = {
+        # Apple
+        '00:1A:11': 'Apple', '00:1B:63': 'Apple', '00:1D:4F': 'Apple',
+        '00:1E:52': 'Apple', '00:1F:F3': 'Apple', '00:21:E9': 'Apple',
+        '00:22:41': 'Apple', '00:23:12': 'Apple', '00:23:6C': 'Apple',
+        '00:23:DF': 'Apple', '00:24:E0': 'Apple', '00:25:00': 'Apple',
+        '00:25:4B': 'Apple', '00:25:BC': 'Apple', '00:26:08': 'Apple',
+        '00:26:4A': 'Apple', '00:26:B0': 'Apple', '00:26:BB': 'Apple',
+        
+        # Xiaomi
+        '60:AB:14': 'Xiaomi', '60:AB:D2': 'Xiaomi', '60:BA:C7': 'Xiaomi',
+        '60:C5:47': 'Xiaomi', '60:D0:A9': 'Xiaomi', '04:CF:8C': 'Xiaomi',
+        '08:D4:2F': 'Xiaomi', '0C:1D:AF': 'Xiaomi', '0C:9D:56': 'Xiaomi',
+        '10:2C:6B': 'Xiaomi', '14:F6:D8': 'Xiaomi', '18:1D:EA': 'Xiaomi',
+        '18:3D:A2': 'Xiaomi', '1C:3A:DE': 'Xiaomi', '1C:5F:2B': 'Xiaomi',
+        '20:11:4B': 'Xiaomi', '20:6B:E7': 'Xiaomi', '24:0A:C4': 'Xiaomi',
+        '24:4B:03': 'Xiaomi', '24:69:68': 'Xiaomi', '24:DA:9B': 'Xiaomi',
+        '28:6D:CD': 'Xiaomi', '28:93:FE': 'Xiaomi', '2C:1D:6D': 'Xiaomi',
+        '2C:AB:00': 'Xiaomi', '30:1A:28': 'Xiaomi', '30:6A:7A': 'Xiaomi',
+        '34:7D:AF': 'Xiaomi', '34:97:FB': 'Xiaomi', '34:CF:F6': 'Xiaomi',
+        '38:6B:1C': 'Xiaomi', '38:7A:3C': 'Xiaomi', '3C:07:71': 'Xiaomi',
+        '3C:2E:F9': 'Xiaomi', '3C:81:D8': 'Xiaomi', '40:31:3C': 'Xiaomi',
+        '40:4A:03': 'Xiaomi', '40:5A:CB': 'Xiaomi', '40:68:0A': 'Xiaomi',
+        '44:80:EB': 'Xiaomi', '44:DF:65': 'Xiaomi', '44:E9:DD': 'Xiaomi',
+        '48:0C:49': 'Xiaomi', '48:48:1C': 'Xiaomi', '48:5A:3F': 'Xiaomi',
+        '48:7A:52': 'Xiaomi', '48:7D:2E': 'Xiaomi', '48:E7:DA': 'Xiaomi',
+        '4C:0B:3A': 'Xiaomi', '4C:19:EE': 'Xiaomi', '4C:75:25': 'Xiaomi',
+        '4C:C0:93': 'Xiaomi', '4C:E1:73': 'Xiaomi', '50:02:91': 'Xiaomi',
+        '50:3E:AA': 'Xiaomi', '50:51:A9': 'Xiaomi', '50:6F:9A': 'Xiaomi',
+        '50:7B:9D': 'Xiaomi', '50:A4:6B': 'Xiaomi', '50:A7:2B': 'Xiaomi',
+        '50:C5:8D': 'Xiaomi', '50:E0:85': 'Xiaomi', '54:48:1E': 'Xiaomi',
+        '54:A7:03': 'Xiaomi', '54:B6:2C': 'Xiaomi', '54:BA:D6': 'Xiaomi',
+        '58:00:E3': 'Xiaomi', '58:48:22': 'Xiaomi', '58:60:5F': 'Xiaomi',
+        '58:93:D8': 'Xiaomi', '58:9E:6A': 'Xiaomi', '58:CB:52': 'Xiaomi',
+        '5C:3A:45': 'Xiaomi', '5C:52:1E': 'Xiaomi', '5C:56:9F': 'Xiaomi',
+        '5C:60:80': 'Xiaomi', '5C:86:4A': 'Xiaomi', '5C:8D:4E': 'Xiaomi',
+        '5C:CF:7F': 'Xiaomi', '5C:E0:8E': 'Xiaomi', '5C:E5:0C': 'Xiaomi',
+        '60:01:94': 'Xiaomi', '60:3A:7C': 'Xiaomi', '60:4F:5D': 'Xiaomi',
+        '60:6C:66': 'Xiaomi', '60:78:78': 'Xiaomi',
+        
+        # Samsung
+        '00:0D:3B': 'Samsung', '00:0E:6F': 'Samsung', '00:0F:0F': 'Samsung',
+        '00:10:10': 'Samsung', '00:11:11': 'Samsung', '00:12:12': 'Samsung',
+        '00:13:13': 'Samsung', '00:14:14': 'Samsung', '00:15:15': 'Samsung',
+        '00:16:16': 'Samsung', '00:17:17': 'Samsung', '00:18:18': 'Samsung',
+        '00:19:19': 'Samsung', '00:1A:1A': 'Samsung', '00:1B:1B': 'Samsung',
+        
+        # Huawei
+        '00:1C:C0': 'Huawei', 'D8:0D:17': 'Huawei', '00:22:FB': 'Huawei',
+        '00:25:9E': 'Huawei', '00:26:5E': 'Huawei',
+        
+        # Oppo/Vivo/OnePlus
+        '00:0A:EB': 'Oppo', '00:1A:EB': 'Oppo', '00:2A:EB': 'Oppo',
+        '00:0A:EC': 'Vivo', '00:1A:EC': 'Vivo', '00:2A:EC': 'Vivo',
+        '00:0A:ED': 'OnePlus', '00:1A:ED': 'OnePlus', '00:2A:ED': 'OnePlus',
+        '00:0A:EE': 'Realme', '00:1A:EE': 'Realme', '00:2A:EE': 'Realme',
+        
+        # Google
+        '00:0A:EF': 'Google', '00:1A:EF': 'Google', '00:2A:EF': 'Google',
+        
+        # Motorola
+        '00:0A:F0': 'Motorola', '00:1A:F0': 'Motorola', '00:2A:F0': 'Motorola',
+        
+        # Nokia
+        '00:0A:F1': 'Nokia', '00:1A:F1': 'Nokia', '00:2A:F1': 'Nokia',
+        
+        # Sony
+        '00:0A:F2': 'Sony', '00:1A:F2': 'Sony', '00:2A:F2': 'Sony',
+        
+        # LG
+        '00:0A:F3': 'LG', '00:1A:F3': 'LG', '00:2A:F3': 'LG',
+        
+        # HTC
+        '00:0A:F4': 'HTC', '00:1A:F4': 'HTC', '00:2A:F4': 'HTC',
+        
+        # Lenovo
+        '00:0A:F5': 'Lenovo', '00:1A:F5': 'Lenovo', '00:2A:F5': 'Lenovo',
+        '00:1C:26': 'Lenovo',
+        
+        # Acer
+        '00:0A:F6': 'Acer', '00:1A:F6': 'Acer', '00:2A:F6': 'Acer',
+        '00:1D:60': 'Acer',
+        
+        # Asus
+        '00:0A:F7': 'Asus', '00:1A:F7': 'Asus', '00:2A:F7': 'Asus',
+        '78:11:DC': 'Asus', '38:22:D6': 'Asus', '30:10:B3': 'Asus',
+        
+        # Dell
+        '00:0A:F8': 'Dell', '00:1A:F8': 'Dell', '00:2A:F8': 'Dell',
+        '00:24:8C': 'Dell', '00:14:22': 'Dell',
+        
+        # HP
+        '00:0A:F9': 'HP', '00:1A:F9': 'HP', '00:2A:F9': 'HP',
+        '00:1D:72': 'HP', '00:1C:C4': 'HP',
+        
+        # Microsoft
+        '00:0A:FA': 'Microsoft', '00:1A:FA': 'Microsoft', '00:2A:FA': 'Microsoft',
+        '00:15:5D': 'Microsoft',
+        
+        # Intel
+        '00:0A:FB': 'Intel', '00:1A:FB': 'Intel', '00:2A:FB': 'Intel',
+        '00:1B:21': 'Intel', '00:26:B0': 'Intel', '00:25:90': 'Intel',
+        
+        # TP-Link
+        '00:0A:FC': 'TP-Link', '00:1A:FC': 'TP-Link', '00:2A:FC': 'TP-Link',
+        '00:12:F0': 'TP-Link', '00:0F:EA': 'TP-Link', '18:68:CB': 'TP-Link',
+        '2C:30:33': 'TP-Link', '40:31:3C': 'TP-Link', '4C:5E:0C': 'TP-Link',
+        '50:C7:BF': 'TP-Link', '58:6D:8F': 'TP-Link', '60:01:94': 'TP-Link',
+        '68:FF:7B': 'TP-Link', '6C:5A:B0': 'TP-Link', '70:4D:7B': 'TP-Link',
+        '74:DA:38': 'TP-Link', '7C:D1:C3': 'TP-Link', '84:0D:8E': 'TP-Link',
+        '8C:68:34': 'TP-Link', '98:D3:31': 'TP-Link', 'A4:02:B9': 'TP-Link',
+        'C8:3A:35': 'TP-Link', 'D0:7E:35': 'TP-Link', 'F0:2F:74': 'TP-Link',
+        'F8:1A:67': 'TP-Link', 'FC:A8:9A': 'TP-Link',
+        
+        # D-Link
+        '00:0A:FD': 'D-Link', '00:1A:FD': 'D-Link', '00:2A:FD': 'D-Link',
+        '00:13:46': 'D-Link', '00:1E:58': 'D-Link', '1C:7E:E5': 'D-Link',
+        '2C:30:33': 'D-Link', '3C:7E:E5': 'D-Link', '5C:CF:7F': 'D-Link',
+        
+        # Netgear
+        '00:0A:FE': 'Netgear', '00:1A:FE': 'Netgear', '00:2A:FE': 'Netgear',
+        '00:23:CD': 'Netgear', '00:1B:2F': 'Netgear', '20:AA:4B': 'Netgear',
+        
+        # Cisco
+        '00:0A:FF': 'Cisco', '00:1A:FF': 'Cisco', '00:2A:FF': 'Cisco',
+        '00:18:4D': 'Cisco', '00:19:07': 'Cisco',
+        
+        # ZTE
+        'F0:33:E5': 'ZTE',
+        
+        # Virtual
+        '08:00:27': 'VirtualBox', '00:0C:29': 'VMware', '00:50:56': 'VMware',
+        
+        # Raspberry Pi
+        'B8:27:EB': 'Raspberry Pi', 'DC:A6:32': 'Raspberry Pi',
+    }
+    
+    return vendors.get(prefix, 'Unknown')
+
+def get_device_type_from_mac(mac):
+    """
+    Tebak tipe device dari MAC address
+    """
+    if not mac or mac == 'Unknown' or mac == '--':
+        return 'Unknown'
+    
+    mac = mac.upper().replace('-', ':')
+    vendor = get_vendor_from_mac(mac)
+    
+    # Mapping vendor ke tipe device
+    vendor_to_type = {
+        'Apple': '📱 iPhone/iPad',
+        'Samsung': '📱 Samsung Galaxy',
+        'Xiaomi': '📱 Xiaomi',
+        'Huawei': '📱 Huawei',
+        'Oppo': '📱 Oppo',
+        'Vivo': '📱 Vivo',
+        'OnePlus': '📱 OnePlus',
+        'Realme': '📱 Realme',
+        'Google': '📱 Google Pixel',
+        'Motorola': '📱 Motorola',
+        'Nokia': '📱 Nokia',
+        'Sony': '📱 Sony',
+        'LG': '📱 LG',
+        'HTC': '📱 HTC',
+        'TP-Link': '🌐 Router/Access Point',
+        'D-Link': '🌐 Router/Access Point',
+        'Netgear': '🌐 Router/Access Point',
+        'Cisco': '🌐 Network Equipment',
+        'ZTE': '🌐 Router/Modem',
+        'Intel': '💻 Laptop/Desktop',
+        'Dell': '💻 Dell Computer',
+        'HP': '💻 HP Computer',
+        'Lenovo': '💻 Lenovo Computer',
+        'Acer': '💻 Acer Computer',
+        'Asus': '💻 Asus Computer',
+        'Microsoft': '💻 Surface/Xbox',
+        'VMware': '🖥️ Virtual Machine',
+        'VirtualBox': '🖥️ Virtual Machine',
+        'Raspberry Pi': '🍓 Raspberry Pi',
+    }
+    
+    return vendor_to_type.get(vendor, f'📶 {vendor} Device')
+
+def suggest_hostname_from_mac(ip, mac):
+    """
+    Suggest hostname berdasarkan MAC address
+    """
+    if not mac or mac == 'Unknown' or mac == '--':
+        return None
+    
+    mac = mac.upper().replace('-', ':')
+    
+    # Cek apakah MAC randomized
+    if is_randomized_mac(mac):
+        return f"📱 Private Device"
+    
+    # Dapatkan vendor
+    vendor = get_vendor_from_mac(mac)
+    if vendor != 'Unknown':
+        # Generate hostname suggestion
+        last_octet = ip.split('.')[-1] if ip else 'XX'
+        return f"{vendor}-{last_octet}"
+    
+    # Generate generic hostname
+    last_octet = ip.split('.')[-1] if ip else 'XX'
+    return f"Device-{last_octet}"
+
+def get_hostname(ip):
+    """
+    Mendapatkan hostname dengan multiple methods (FIXED VERSION)
+    """
+    socket.setdefaulttimeout(2)
+    
+    # Method 1: Reverse DNS lookup
+    try:
+        hostname = socket.gethostbyaddr(ip)[0]
+        if hostname:
+            # Ambil bagian pertama sebelum titik
+            clean_name = hostname.split('.')[0]
+            if clean_name and clean_name.lower() not in ['localhost', 'unknown', 'local']:
+                return clean_name
+    except:
+        pass
+    
+    # Method 2: Check if it's the gateway
+    try:
+        if ip == netcut.gateway_ip:
+            return "Gateway"
+    except:
+        pass
+    
+    # Method 3: Check if it's local machine
+    if ip == netcut.local_ip:
+        return socket.gethostname()
+    
+    # Method 4: Try nbtscan for Windows hosts
+    try:
+        # Cek apakah nmblookup tersedia
+        cmd = "which nmblookup > /dev/null 2>&1"
+        if subprocess.run(cmd, shell=True).returncode == 0:
+            cmd = f"nmblookup -A {ip} 2>/dev/null | grep '<00>' | grep -v GROUP | head -1 | awk '{{print $1}}'"
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            if result.returncode == 0 and result.stdout.strip():
+                hostname = result.stdout.strip()
+                # Filter hostname yang valid
+                if hostname and len(hostname) < 50 and not hostname.startswith('*'):
+                    return hostname
+    except:
+        pass
+    
+    # Method 5: Try to get from DHCP leases
+    try:
+        # Cek di dnsmasq leases
+        if os.path.exists('/var/lib/misc/dnsmasq.leases'):
+            cmd = f"grep '{ip}' /var/lib/misc/dnsmasq.leases 2>/dev/null | tail -1 | awk '{{print $4}}'"
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            if result.returncode == 0 and result.stdout.strip():
+                hostname = result.stdout.strip()
+                if hostname and hostname != '*':
+                    return hostname
+    except:
+        pass
+    
+    # Method 6: Try mdns (avahi)
+    try:
+        cmd = "which avahi-resolve-address > /dev/null 2>&1"
+        if subprocess.run(cmd, shell=True).returncode == 0:
+            cmd = f"avahi-resolve-address {ip} 2>/dev/null | awk '{{print $2}}' | cut -d'.' -f1"
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip()
+    except:
+        pass
+    
+    # Method 7: Coba ping untuk trigger ARP
+    try:
+        subprocess.run(f"ping -c 1 -W 1 {ip} > /dev/null 2>&1", shell=True)
+        time.sleep(0.1)  # Tunggu ARP cache update
+    except:
+        pass
+    
+    return "Unknown"
+
 # ==================== ORIGINAL FUNCTIONS ====================
 
 # Get hostname of the local machine
@@ -566,21 +912,6 @@ def simple_hostname_lookup(ip):
     except:
         return None
 
-# Improved function to get hostname
-def get_hostname(ip):
-    socket.setdefaulttimeout(1)
-    
-    try:
-        hostname, _, _ = socket.gethostbyaddr(ip)
-        return hostname
-    except:
-        my_ip = get_local_network_info()['local_ip']
-        if ip == my_ip:
-            return get_local_hostname()
-        return "Unknown"
-
-<<<<<<< HEAD
-=======
 # Function to load saved device names
 def load_saved_device_names():
     try:
@@ -601,8 +932,7 @@ def load_saved_device_names():
         print(f"Error loading saved device names: {e}")
         return {}
 
->>>>>>> e1b2da4 (upgrade with cut inprogram)
-# Scan network for devices
+# Scan network for devices (ENHANCED VERSION)
 def scan_network():
     global devices, last_scan_time
     
@@ -610,34 +940,32 @@ def scan_network():
     cidr = network_info['cidr']
     local_ip = network_info['local_ip']
     local_hostname = network_info['hostname']
+    gateway_ip = network_info['gateway_ip']
     
-<<<<<<< HEAD
-    print(f"Starting network scan for {cidr}")
-    print(f"Local IP: {local_ip}, Local Hostname: {local_hostname}")
-=======
     saved_device_names = load_saved_device_names()
     
     print(f"\n📡 Scanning network {cidr}...")
->>>>>>> e1b2da4 (upgrade with cut inprogram)
     
     nm = nmap.PortScanner()
+    discovered_devices = []
     
     try:
+        # NMAP Scan
         nm.scan(hosts=cidr, arguments='-sn')
         
-        discovered_devices = []
         for host in nm.all_hosts():
+            # Gunakan fungsi get_hostname yang baru (enhanced)
             hostname = get_hostname(host)
             
             if host == local_ip:
                 hostname = local_hostname
             
-<<<<<<< HEAD
-=======
-            if host in saved_device_names:
+            if host == gateway_ip and hostname == 'Unknown':
+                hostname = 'Gateway'
+            
+            if host in saved_device_names and hostname == 'Unknown':
                 hostname = saved_device_names[host]['hostname']
             
->>>>>>> e1b2da4 (upgrade with cut inprogram)
             device_info = {
                 'ip': host,
                 'hostname': hostname,
@@ -646,8 +974,11 @@ def scan_network():
                 'first_seen': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 'mac': 'Unknown',
                 'vendor': 'Unknown',
+                'device_type': 'Unknown',
+                'is_randomized': False,
                 'blocked': False,
-                'is_local': (host == local_ip)
+                'is_local': (host == local_ip),
+                'is_gateway': (host == gateway_ip)
             }
             
             # Get MAC address
@@ -656,28 +987,37 @@ def scan_network():
                     cmd = f"arp -n {host} 2>/dev/null | grep -v Address | awk '{{print $3}}'"
                     mac = subprocess.check_output(cmd, shell=True).decode().strip()
                     if mac and mac != '(incomplete)':
+                        mac = mac.upper()
                         device_info['mac'] = mac
+                        device_info['vendor'] = get_vendor_from_mac(mac)
+                        device_info['is_randomized'] = is_randomized_mac(mac)
+                        device_info['device_type'] = get_device_type_from_mac(mac)
+                        
+                        # Jika hostname masih Unknown, coba suggest dari MAC
+                        if device_info['hostname'] == 'Unknown':
+                            suggested = suggest_hostname_from_mac(host, mac)
+                            if suggested:
+                                device_info['hostname'] = suggested
             except:
                 pass
             
-<<<<<<< HEAD
-            # Check if device is in blocked list
-            if device_info['ip'] in blocked_devices or device_info['mac'] in blocked_devices:
-=======
             # Use saved MAC
             if host in saved_device_names and device_info['mac'] == 'Unknown':
                 saved_mac = saved_device_names[host].get('mac')
                 if saved_mac and saved_mac != 'Unknown':
                     device_info['mac'] = saved_mac
+                    device_info['vendor'] = get_vendor_from_mac(saved_mac)
+                    device_info['is_randomized'] = is_randomized_mac(saved_mac)
+                    device_info['device_type'] = get_device_type_from_mac(saved_mac)
             
             # Check if cut by NetCut
             netcut_status = netcut.get_status()
             if device_info['ip'] in netcut_status['active_cuts']:
->>>>>>> e1b2da4 (upgrade with cut inprogram)
                 device_info['blocked'] = True
                 device_info['status'] = 'down'
             
             discovered_devices.append(device_info)
+            print(f"   ✅ Found: {device_info['ip']:15} {device_info['hostname']:20} {device_info['mac']} [{device_info['vendor']}] [{device_info['device_type']}]")
         
         # Update existing devices
         for new_device in discovered_devices:
@@ -687,12 +1027,21 @@ def scan_network():
                     existing_device['status'] = new_device['status']
                     existing_device['last_seen'] = new_device['last_seen']
                     
-                    if new_device['hostname'] != 'Unknown':
+                    # Update hostname jika masih Unknown
+                    if existing_device['hostname'] == 'Unknown' and new_device['hostname'] != 'Unknown':
                         existing_device['hostname'] = new_device['hostname']
                     
                     if new_device['mac'] != 'Unknown':
                         existing_device['mac'] = new_device['mac']
                     
+                    if new_device['vendor'] != 'Unknown':
+                        existing_device['vendor'] = new_device['vendor']
+                    
+                    if new_device['device_type'] != 'Unknown':
+                        existing_device['device_type'] = new_device['device_type']
+                    
+                    existing_device['is_randomized'] = new_device['is_randomized']
+                    existing_device['is_gateway'] = new_device['is_gateway']
                     new_device['blocked'] = existing_device['blocked']
                     existing_device['is_local'] = new_device['is_local']
                     
@@ -705,7 +1054,8 @@ def scan_network():
         # Mark offline devices
         for device in devices:
             if device['ip'] not in [d['ip'] for d in discovered_devices]:
-                device['status'] = 'down'
+                if not device.get('blocked'):
+                    device['status'] = 'down'
         
         last_scan_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
@@ -816,40 +1166,7 @@ def kick_device(identifier):
             try:
                 target_ip = device['ip']
                 
-<<<<<<< HEAD
-                # Implement actual kicking using ARP spoofing
-                if os.name == 'posix':  # Linux
-                    try:
-                        # Check if we have arping installed
-                        subprocess.run(['which', 'arping'], check=True, stdout=subprocess.PIPE)
-                        
-                        # Send fake ARP packets to both the target and the gateway
-                        # To the target: pretend to be the gateway
-                        if target_mac != 'Unknown':
-                            spoof_cmd1 = f"sudo arping -c 5 -U -I {interface} -s {gateway_ip} {target_ip}"
-                            subprocess.Popen(spoof_cmd1, shell=True)
-                            
-                            # To the gateway: pretend to be the target
-                            spoof_cmd2 = f"sudo arping -c 5 -U -I {interface} -s {target_ip} {gateway_ip}"
-                            subprocess.Popen(spoof_cmd2, shell=True)
-                            
-                            print(f"Sent ARP spoofing packets to kick {target_ip}")
-                            
-                            # Block the device temporarily
-                            block_device(identifier)
-                            # Schedule unblocking after 10 seconds
-                            threading.Timer(10.0, lambda: unblock_device(identifier)).start()
-                            
-                            return True
-                        else:
-                            print(f"Cannot kick: MAC address unknown for {target_ip}")
-                            return False
-                    except subprocess.CalledProcessError:
-                        print("arping not found, cannot perform kick operation")
-                        return False
-=======
                 success = netcut.cut_internet(target_ip)
->>>>>>> e1b2da4 (upgrade with cut inprogram)
                 
                 if success:
                     device['status'] = 'down'
@@ -916,9 +1233,6 @@ def initialize():
     thread.daemon = True
     thread.start()
 
-<<<<<<< HEAD
-# Routes
-=======
 def save_device_changes(device):
     try:
         network_info = get_local_network_info()
@@ -947,9 +1261,174 @@ def save_device_changes(device):
     except Exception as e:
         print(f"Error saving device changes: {e}")
 
+# ==================== DEVICE DETAIL HELPERS ====================
+def _parse_iw_value(line, prefix):
+    if not line.lower().strip().startswith(prefix.lower()):
+        return None
+    return line.split(':', 1)[1].strip() if ':' in line else None
+
+
+def _infer_wifi_standard(raw_output, frequency):
+    upper = raw_output.upper()
+    if 'EHT-' in upper or 'EHT-MCS' in upper:
+        return 'Wi-Fi 7 (802.11be)'
+    if 'HE-' in upper or 'HE-MCS' in upper or 'HE GI' in upper:
+        try:
+            freq = float(frequency or 0)
+        except (TypeError, ValueError):
+            freq = 0
+        return 'Wi-Fi 6E (802.11ax)' if freq >= 5925 else 'Wi-Fi 6 (802.11ax)'
+    if 'VHT-' in upper or 'VHT-MCS' in upper:
+        return 'Wi-Fi 5 (802.11ac)'
+    if 'HT-' in upper or 'HT-MCS' in upper:
+        return 'Wi-Fi 4 (802.11n)'
+    return 'Unknown'
+
+
+def _get_wifi_details(device):
+    """Best-effort Wi-Fi details for local/AP-visible stations.
+
+    ARP/Nmap cannot reveal a remote client's Wi-Fi generation. We only return
+    iw data when the operating system exposes station/link information.
+    """
+    result = {
+        'available': False,
+        'connection_type': 'Unknown',
+        'ssid': None,
+        'frequency_mhz': None,
+        'signal_dbm': None,
+        'rx_bitrate_mbps': None,
+        'tx_bitrate_mbps': None,
+        'technology': 'Not exposed by network',
+        'note': 'Wi-Fi details require local/AP station data.'
+    }
+
+    iface = getattr(netcut, 'interface', None)
+    mac = (device.get('mac') or '').strip()
+    local = bool(device.get('is_local'))
+    if not iface:
+        return result
+
+    def run_iw(args):
+        try:
+            return subprocess.run(
+                ['iw', 'dev', iface] + args,
+                capture_output=True,
+                text=True,
+                timeout=2
+            )
+        except (FileNotFoundError, subprocess.SubprocessError, OSError):
+            return None
+
+    completed = None
+    if mac and mac.lower() not in {'unknown', '--'}:
+        completed = run_iw(['station', 'get', mac])
+        if completed and completed.returncode != 0:
+            completed = None
+
+    if completed is None and local:
+        completed = run_iw(['link'])
+        if completed and completed.returncode != 0:
+            completed = None
+
+    if not completed or not completed.stdout.strip():
+        return result
+
+    raw = completed.stdout
+    result['available'] = True
+    result['connection_type'] = 'Wi-Fi'
+
+    for line in raw.splitlines():
+        s=line.strip()
+        low=s.lower()
+        if low.startswith('ssid '):
+            result['ssid']=s.split(' ',1)[1].strip()
+        elif low.startswith('freq:'):
+            value=s.split(':',1)[1].strip().split()[0]
+            try: result['frequency_mhz']=int(float(value))
+            except ValueError: pass
+        elif low.startswith('signal:'):
+            value=s.split(':',1)[1].strip().split()[0]
+            try: result['signal_dbm']=float(value)
+            except ValueError: pass
+        elif low.startswith('rx bitrate:'):
+            value=s.split(':',1)[1].strip().split()[0]
+            try: result['rx_bitrate_mbps']=float(value)
+            except ValueError: pass
+        elif low.startswith('tx bitrate:'):
+            value=s.split(':',1)[1].strip().split()[0]
+            try: result['tx_bitrate_mbps']=float(value)
+            except ValueError: pass
+
+    result['technology']=_infer_wifi_standard(raw, result.get('frequency_mhz'))
+    result['note'] = 'Wi-Fi link rate, not the internet speed supplied by the ISP.'
+    return result
+
+
+def _get_observed_device_traffic(ip):
+    """Best-effort current traffic rate from Linux conntrack counters.
+
+    This is intentionally optional. On hosts that do not see forwarded client
+    traffic, the result is reported as unavailable rather than guessed.
+    """
+    now=time.time()
+    try:
+        completed=subprocess.run(
+            ['conntrack', '-L', '-o', 'extended'],
+            capture_output=True,
+            text=True,
+            timeout=2
+        )
+    except (FileNotFoundError, subprocess.SubprocessError, OSError):
+        return {'available': False, 'rx_mbps': None, 'tx_mbps': None, 'note': 'Per-device traffic is unavailable on this host.'}
+
+    if completed.returncode != 0:
+        return {'available': False, 'rx_mbps': None, 'tx_mbps': None, 'note': 'Per-device traffic is unavailable on this host.'}
+
+    total_bytes=0
+    for line in completed.stdout.splitlines():
+        if re.search(rf'(?<![0-9]){re.escape(ip)}(?![0-9])', line):
+            values=[int(x) for x in re.findall(r'bytes=(\d+)', line)]
+            total_bytes += sum(values)
+
+    previous=device_traffic_cache.get(ip)
+    device_traffic_cache[ip]={'bytes': total_bytes, 'time': now}
+    if not previous or now <= previous['time'] or total_bytes < previous['bytes']:
+        return {'available': True, 'rx_mbps': None, 'tx_mbps': None, 'note': 'Sampling device traffic…'}
+
+    elapsed=now-previous['time']
+    mbps=((total_bytes-previous['bytes']) * 8) / elapsed / 1_000_000
+    return {'available': True, 'rx_mbps': mbps, 'tx_mbps': None, 'note': 'Observed traffic rate; actual internet throughput may differ.'}
+
+
+def build_device_details(ip):
+    try:
+        ipaddress.ip_address(ip)
+    except ValueError:
+        return None
+
+    device=next((d for d in devices if d.get('ip') == ip), None)
+    if device is None:
+        return None
+
+    wifi=_get_wifi_details(device)
+    traffic=_get_observed_device_traffic(ip)
+    return {
+        'ip': device.get('ip'),
+        'hostname': device.get('hostname') or 'Unknown',
+        'mac': device.get('mac') or 'Unknown',
+        'vendor': device.get('vendor') or 'Unknown',
+        'device_type': device.get('device_type') or 'Unknown',
+        'status': 'blocked' if device.get('blocked') else device.get('status','down'),
+        'last_seen': device.get('last_seen'),
+        'is_local': bool(device.get('is_local')),
+        'is_gateway': bool(device.get('is_gateway')),
+        'wifi': wifi,
+        'traffic': traffic
+    }
+
 # ==================== ROUTES ====================
 
->>>>>>> e1b2da4 (upgrade with cut inprogram)
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -964,6 +1443,13 @@ def get_devices_api():
             device['blocked'] = True
     
     return jsonify(devices)
+
+@app.route('/api/device/<path:ip>/details')
+def get_device_details_api(ip):
+    details=build_device_details(ip)
+    if details is None:
+        return jsonify({'status': 'error', 'message': 'Device not found or invalid IP'}), 404
+    return jsonify(details)
 
 @app.route('/api/stats')
 def get_stats_api():
@@ -1040,8 +1526,6 @@ def kick_device_api():
     else:
         return jsonify({"status": "error", "message": f"Device {identifier} not found"}), 404
 
-<<<<<<< HEAD
-=======
 @app.route('/api/rename-device', methods=['POST'])
 def rename_device_api():
     data = request.get_json()
@@ -1088,7 +1572,6 @@ def rename_devices_mass_api():
 
     return jsonify({"status": "success", "message": f"Updated {updated_count} devices successfully"})
 
->>>>>>> e1b2da4 (upgrade with cut inprogram)
 @app.route('/api/update-settings', methods=['POST'])
 def update_settings():
     global scan_interval
@@ -1101,8 +1584,6 @@ def update_settings():
     else:
         return jsonify({"status": "error", "message": "Invalid scan interval"}), 400
 
-<<<<<<< HEAD
-=======
 @app.route('/api/saved-devices')
 def get_saved_devices():
     saved_devices = load_saved_device_names()
@@ -1247,7 +1728,6 @@ def flush_all_cuts():
 
 # ==================== MAIN ====================
 
->>>>>>> e1b2da4 (upgrade with cut inprogram)
 if __name__ == '__main__':
     # Check if running with sudo
     if os.geteuid() != 0:
@@ -1268,12 +1748,9 @@ if __name__ == '__main__':
     hostname = get_local_hostname()
     print(f"\n🏠 Starting application on host: {hostname}")
     
-<<<<<<< HEAD
-=======
     # Load saved device names
     saved_devices = load_saved_device_names()
     
->>>>>>> e1b2da4 (upgrade with cut inprogram)
     # Initial scan
     scan_network()
     get_network_stats()
@@ -1282,9 +1759,6 @@ if __name__ == '__main__':
     initialize()
     
     # Run Flask app
-<<<<<<< HEAD
-    app.run(host='0.0.0.0', port=5000, debug=True)
-=======
     print("\n" + "="*60)
     print("🚀 ROUTER DASHBOARD with NETCUT ARP SPOOFING")
     print("="*60)
@@ -1298,10 +1772,8 @@ if __name__ == '__main__':
     print("="*60 + "\n")
     
     try:
-        app.run(host='0.0.0.0', port=8686, debug=True, threaded=True)
+        app.run(host='0.0.0.0', port=8888, debug=True, threaded=True)
     except KeyboardInterrupt:
         print("\n👋 Shutting down NetCut Engine...")
         netcut.cleanup()
         print("Goodbye!")
-# [file content end]
->>>>>>> e1b2da4 (upgrade with cut inprogram)
